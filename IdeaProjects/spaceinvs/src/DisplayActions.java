@@ -8,35 +8,47 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 import java.util.List;
+import java.util.Timer;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class DisplayActions extends JComponent {
 
-    int xShip, yShip, moveSpeed, BulletTimer, attackSpeed, maxEnemies, difficulty, level, pause;
-    boolean left, right, shoot;
+    int xShip, yShip, moveSpeed, BulletTimer, attackSpeed, difficulty, level, pause, health, sf, currentBackground;
+    long invulnerabiltyTime;
+    Timer t = new Timer();
+    boolean left, right, shoot, run = true, playerHit = false;
+    static long score = 0;
+
     List<Enemy> enemies = new CopyOnWriteArrayList<Enemy>();
     List<Bullet> bullets = new CopyOnWriteArrayList<Bullet>();
+    List<EnemyBullet> enemyBullets = new CopyOnWriteArrayList<EnemyBullet>();
+
     static DisplayActions actions = new DisplayActions();
+    Timer tm = new Timer();
 
-    BufferedImage ship = getImage("Ship2"); // Add images by putting them in /res/.
-    BufferedImage bullet = getImage("PBullet");
 
+    BufferedImage ship = getImage("bcTest"); // Add images by putting them in /res/.
+    BufferedImage backgroundImages[] = {getImage("space1"), getImage("space2"),
+            getImage("space3") , getImage("space4"),
+            getImage("space5")};
     InputHandler input = new InputHandler();
     static JFrame window = new JFrame(); // Creates a window
     Random rnd = new Random();
 
-    public static void main(String[] Args){
+    public static void main(String[] Args) {
 
-    actions.setUpDisplay(); // Creates the window and sets the parameters in setUP;
-    actions.setUpVariables();
-        while (true) {
+        actions.setUpDisplay(); // Creates the window and sets the parameters in setUP;
+        actions.setUpVariables();
+        while (actions.run) {
             try {
                 actions.movement();
                 actions.shoot();
                 actions.repaint();
                 actions.spawnEnemies();
                 actions.moveEnemeies();
+                actions.enemyShoot();
                 actions.detectCollision();
+
                 Thread.sleep(8);
             } catch (InterruptedException e) {
                 e.printStackTrace();
@@ -46,73 +58,259 @@ public class DisplayActions extends JComponent {
     }
 
 
-
     @Override
     protected void paintComponent(Graphics g) {
+
+
+        // use all pictures from the array
+        g.drawImage(backgroundImages[currentBackground % backgroundImages.length], 0, 0, null);
+        g.setColor(Color.GREEN);
+        g.drawString(String.format("Score: %d\t Level: %d \tLives: %d", score, level, health), 10 , 600);
         g.setColor(Color.BLUE);
         g.drawImage(ship, xShip, yShip, ship.getWidth() / 3, ship.getHeight() / 3, null);
-        for(Bullet b : bullets){
-            g.drawImage(bullet, b.pointX,b.pointY,b.width,b.height, null);
+        for (Bullet b : bullets) {
+            g.drawImage(b.sprite, b.pointX, b.pointY, b.width, b.height, null);
         }
-        for (Enemy e : enemies){
+        for (EnemyBullet eb : enemyBullets) {
+            g.drawImage(eb.sprite, eb.pointX, eb.pointY, eb.sprite.getWidth(), eb.sprite.getHeight(), null);
+        }
+        for (Enemy e : enemies) {
             g.drawImage(e.sprite, e.locX, e.locY, e.sprite.getWidth(), e.sprite.getHeight(), null);
         }
     }
     public void spawnEnemies() {
         if (enemies.isEmpty()) {
-            for (int i = 0; i < difficulty; i++) {
-                    System.out.println( difficulty);
-                    Enemy e = new Enemy();
-                    e.setEnemy(1);
-                    enemies.add(e);
+            for (int i = 0; i < difficulty; ) {
+                int temp = rnd.nextInt(200);
+                if (temp < 110 - difficulty*3) {
+                    temp = 1;
+                } else if (temp < 180 - difficulty*3 && temp > 110 - difficulty*3) {
+                    temp = 2;
+                } else if (temp >= 180 - difficulty*3) {
+                    temp = 3;
                 }
-            pause = 500; // 4 seconds
+
+                Enemy e = new Enemy();
+                e.setEnemy(temp);
+                if (difficulty - i >= e.value) {
+                    enemies.add(e);
+                    i += e.value;
+                }
+            }
             difficulty += 3;
             level += 1;
-            }
-        }
-    public void detectCollision(){
-        for (Bullet b : bullets){
-            for (Enemy e : enemies){
-                if (b.pointX >= e.locX && b.pointX <= e.locX + e.sprite.getWidth() && b.pointY <= e.locY && b.pointY < e.locY + e.sprite.getHeight()){
-                    e.health--;
-                    bullets.remove(b);
-                }
+            if (level % 4 == 0){
+                currentBackground++;
             }
         }
     }
-    public void moveEnemeies(){
-        for(Enemy e : enemies){
-            e.directionSwitchX--;
-            if (e.locX > e.sprite.getWidth() && e.locX < (window.getWidth() - e.sprite.getWidth())){
-                e.locX += e.moveSpeedX * e.direction;
-                e.locY += e.moveSpeedY * e.direction;
-                e.directionSwitchX += rnd.nextInt(10)* e.direction;
-            }
-            if (e.locX < e.sprite.getWidth() + 10 || e.locX > getWidth() - e.sprite.getWidth() - 20){
-                e.direction = -e.direction ;
-            }
-            if (e.health < 1){
-                enemies.remove(e);
+    public void enemyShoot() {
+        for (EnemyBullet eb : enemyBullets) {
+            eb.pointY += eb.bulletSpeed;
+            if (eb.isOutsideBounds(eb)) {
+                enemyBullets.remove(eb);
             }
         }
+
+        for (Enemy e : enemies) {
+
+            if (e.cd == 0) {
+                int temp = rnd.nextInt(100);
+                switch (e.id) {
+                    case 1: {
+                        if (temp > 98) {
+                            EnemyBullet eb = new EnemyBullet();
+                            eb.setBullet(e.id, (e.locX + (e.sprite.getWidth() / 2)), e.locY);
+                            enemyBullets.add(eb);
+                            e.cd = e.shotFreqency;
+                        }
+                    }
+
+                    break;
+
+                    case 2: {
+                        if (temp > 96) {
+                            EnemyBullet eb = new EnemyBullet();
+                            eb.setBullet(e.id, (e.locX + (e.sprite.getWidth() / 4)), e.locY + e.sprite.getHeight() / 4);
+                            enemyBullets.add(eb);
+                            e.cd = e.shotFreqency;
+                        }
+                    }
+
+                    break;
+
+                    case 3: {
+                        if (temp > 98) {
+                            for (int i = 0; i < rnd.nextInt(2) + 2; i++) {
+                                EnemyBullet eb = null;
+                                eb = new EnemyBullet();
+                                eb.setBullet(e.id, (e.locX + (e.sprite.getWidth() / 2) + (rnd.nextInt(30) - 30)), e.locY + rnd.nextInt(30));
+                                enemyBullets.add(eb);
+                            }
+
+                            e.cd = e.shotFreqency;
+                        }
+                    }
+                    break;
+                }
+
+            } else {
+                e.cd--;
+            }
+        }
+    }
+    public void detectCollision() {
+        for (Bullet b : bullets) {
+            for (Enemy e : enemies) {
+                if (b.pointX >= e.locX && b.pointX <= e.locX + e.sprite.getWidth() && b.pointY <= e.locY && b.pointY < e.locY + e.sprite.getHeight()) {
+                    e.health--;
+                    bullets.remove(b);
+                    score += 10;
+                }
+            }
+
+        }
+        for (EnemyBullet eb : enemyBullets) {
+            if (eb.pointX > xShip + ship.getWidth() / 16 && eb.pointX < xShip + ship.getWidth() / 4 && eb.pointY >= yShip - 5 && eb.pointY < yShip + ship.getHeight() / 6) {
+                if (!playerHit) {
+                    actions.tm.schedule(new TimerTask() {
+                        @Override
+                        public void run() {
+                            playerHit = false;
+                            ship = getImage("bcTest");
+                        }
+                    }, invulnerabiltyTime);
+                    health -= eb.damage;
+                    playerHit = true;
+                    System.out.println("Player Hit!");
+                    ship = getImage("bcTestNeg");
+                }
+            }
+        }
+        if (health < 1) {
+            window.dispose();
+            actions.run = false;
+        }
+    }
+    public void moveEnemeies() {
+        for (Enemy e : enemies) {
+
+            int temp = rnd.nextInt(100);
+            switch (e.id) {
+                case 1: {
+                    e.locX += e.moveSpeedX * e.directionX;
+                    e.locY += e.moveSpeedY * e.directionX;
+
+                    if (e.directionSwitchX == 0) {
+                        if (e.locX <= 1 || e.locX > getWidth() - e.sprite.getWidth() - 10) {
+                            e.directionX = -e.directionX;
+                            e.directionSwitchX = 10;
+                        } else if (temp < 1) {
+                            e.directionX = -e.directionX;
+                            e.directionSwitchX += 5;
+                        }
+
+                    } else {
+                        e.directionSwitchX--;
+                    }
+                    break;
+                }
+                case 2: {
+
+                    temp = rnd.nextInt(200);
+                    e.locX += e.moveSpeedX * e.directionX;
+                    e.locY += e.moveSpeedY * e.directionY;
+
+
+                    if (e.directionSwitchX == 0) {
+                        if (e.locX <= 1 || e.locX > window.getWidth() - e.sprite.getWidth()) {
+                            e.directionX = -e.directionX;
+                            e.directionSwitchX += 60;
+                        } else if (temp < 1) {
+                            e.directionX = -e.directionX;
+                            e.directionSwitchX += 5;
+                        }
+                    } else {
+                        e.directionSwitchX--;
+                    }
+                    if (e.directionSwitchY == 0) {
+                        if (e.locY > e.maxY || e.locY < e.minY || e.locY < 10) {
+                            e.directionY = -e.directionY;
+                            e.directionSwitchY = 15;
+                        } else if (temp < 3) {
+                            if (e.directionSwitchX == 0) {
+                                e.directionX = -e.directionX;
+                                e.directionSwitchX += 5;
+                            }
+                        } else if (temp > 198) {
+                            e.directionY = -e.directionY;
+                            e.directionSwitchY = 30;
+                        }
+
+                    } else {
+                        e.directionSwitchY -= 1;
+                    }
+                    break;
+                }
+                case 3: {
+                    e.locX += e.moveSpeedX * e.directionX;
+
+
+                    if (e.locX < 1 || e.locX > window.getWidth() - e.sprite.getWidth()) {
+                        e.directionX = -e.directionX;
+                        if (e.locX > xShip + ship.getWidth() / 12 ) {
+
+                            e.switchedLeft = false;
+                        } else if ( e.locX < xShip + ship.getWidth() / 12) {
+
+                            e.switchedRight = false;
+                        }
+                    }
+
+
+                    if (!e.switchedRight) {
+                        if (e.locX > (xShip + ship.getWidth() / 12) + e.directionSwitchX) {
+                            e.directionX = -e.directionX;
+                            e.switchedLeft = false;
+                            e.switchedRight = true;
+                        }
+                    }
+
+                    if (!e.switchedLeft) {
+                        if (e.locX < (xShip - ship.getWidth() / 12) - e.directionSwitchX) {
+                            e.directionX = -e.directionX;
+                            e.switchedRight = false;
+                            e.switchedLeft = true;
+                        }
+                    }
+
+
+                }
+            }
+            if (e.health < 1) {
+                enemies.remove(e);
+                score += 100;
+            }
+
+        }
+
     }
     public void shoot(){
 
         if(shoot && BulletTimer == 0){
-            Bullet b; // Creates a new bullet;
-            b = Bullet.getBullet(6 +  xShip + ship.getWidth()/8, yShip - ship.getHeight()/9, 10, 20, 5, 1); // Sets bullet's Parameters
+            Bullet b = new Bullet(); // Creates a new bullet;
+            b.setBullet(1, 6 + xShip + ship.getWidth() / 8, window.getHeight() - ship.getHeight() / 2); // Sets bullet's Parameters
             bullets.add(b); // adds to array
             BulletTimer = attackSpeed; // Time between bullets is 32 * 8 ( thread.sleep) miliseconds = 256ms
         }else if(BulletTimer >= 1){
             BulletTimer--;
         }
         for (Bullet b : bullets ){
-            if (b.isOutsideBounds(b)){
+            if (b.isOutsideBounds(b) && b.collides){
                 bullets.remove(b);
             }
             else {
-                b.pointY -= b.bulletSpeed;
+                b.pointY += b.bulletSpeed * b.direction;
             }
 
         }
@@ -136,9 +334,12 @@ public class DisplayActions extends JComponent {
     public void setUpVariables(){
         xShip = (window.getWidth()/2) - (ship.getWidth()/6);
         yShip = 600-ship.getHeight()/3;
-        attackSpeed = 48; //lower is faster;
-        moveSpeed = 5;
+        attackSpeed = 24; //lower is faster;
+        moveSpeed = 3;
         difficulty = 3;
+        health = 3;
+        invulnerabiltyTime = 750; //1 sec in ms
+        currentBackground = 0;
     }
     public void setUpDisplay(){
 
